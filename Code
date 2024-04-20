@@ -1,0 +1,371 @@
+### Crime Prediction using Machine Learning
+**Project Description:**
+
+The project aims to leverage machine learning algorithms to predict the likelihood of crimes occurring in different areas based on various features such as time of day, day of the week, location characteristics, and geographical data. Additionally, the project seeks to identify crime hotspots where law enforcement resources may need to be concentrated.
+
+**Type of Learning/Algorithm: Supervised Learning, Classification**
+
+In this project, I will employ supervised learning techniques, specifically classification algorithms, to analyze historical crime data and build predictive models. Supervised learning involves training a model on labeled data, where each instance is associated with a known outcome (in this case, whether a crime occurred or not). Classification algorithms such as Random Forest, Gradient Boosting, or Support Vector Machines will be used to predict the occurrence of crimes based on input features.
+
+**Type of Task: Crime Prediction and Hotspot Analysis**
+
+The primary task of the project is crime prediction, where the goal is to predict the likelihood of crimes occurring in different areas based on various features. This involves training machine learning models to classify instances into two classes: "crime occurrence" and "no crime occurrence". Additionally, the project involves hotspot analysis, where we aim to identify regions or areas with a high probability of crime occurrence. This task involves spatial analysis and clustering techniques to identify hotspots where crime rates are significantly higher than average.
+
+By combining predictive modeling with hotspot analysis, the project aims to provide actionable insights for law enforcement agencies and city planners to allocate resources effectively, implement preventive measures, and improve public safety.
+
+**Dataset**
+
+The dataset utilized in this project was sourced from Data.gov and encompasses records of crime incidents within the City of Los Angeles dating back to 2020. The dataset can be found via the following link: https://catalog.data.gov/dataset/crime-data-from-2020-to-present
+
+**Data Description**
+
+The dataset is a large CSV file, totaling 200 MB, containing 28 columns and 925,721 rows. Among these columns, 11 are categorical, while the remainder are numerical. The dataset comprises various features, however the following columns will be used for this project:
+* Date Occured
+* Time Occurance
+* Area
+* Area code
+* Crime code
+* Premises Description
+* Location
+* Latitude
+* Longitude
+#### Data Cleaning
+import pandas as pd
+import matplotlib.pyplot as plt
+import folium
+from folium.plugins import MarkerCluster
+import seaborn as sns
+import category_encoders as ce
+import statsmodels.api as sm
+import numpy as np
+import pypandoc
+df = pd.read_excel('Downloads/Crime_Data_from_2020_to_PresentExcel.xlsx')
+#removing irrelevant columns
+columns_to_remove = ['DR_NO', 'Date Rptd', 'Rpt Dist No', 'Part 1-2', 'Status', 'Status Desc','Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'Cross Street','Mocodes','Premis Cd','Vict Descent','Vict Age','Vict Sex', 'Weapon Used Cd', 'Weapon Desc', 'Crm Cd Desc']
+df.drop(columns=columns_to_remove, inplace=True)
+print(df.columns)
+#renaming columns
+column_mapping = {
+    'DATE OCC': 'Date_Occurred',
+    'TIME OCC': 'Time_Occurred',
+    'AREA':'Area_Code',
+    'AREA NAME': 'Area',
+    'LOCATION': 'Location',
+    'Premis Desc':'Premises_Description',
+    'LAT':'Latitude',
+    'Crm Cd':'Crime_Code',
+    'LON':'Longitude',
+}
+df.rename(columns=column_mapping, inplace=True)
+print(df.columns)
+As stated in the project description, only columns pertaining to time, date, and location are relevant. The remaining columns were removed and relabeled for better comprehension.
+#looking for missing values
+missing_values = df.isna().sum()
+
+print("Missing Values for Each Column:")
+print(missing_values)
+Since 'Premises_Description' is the only column with missing values, replacing the blank rows with 'unknown' will not result in any changes, as the blank rows will be treated as "unknown".
+# Convert date columns to datetime
+df['Date_Occurred'] = pd.to_datetime(df['Date_Occurred'])
+
+# Mapping numerical values to text
+month_mapping = {1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December'}
+day_mapping = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
+
+# Extracting day of the week and month
+df['Day_of_Week'] = df['Date_Occurred'].dt.dayofweek.map(day_mapping)
+df['Month'] = df['Date_Occurred'].dt.month.map(month_mapping)
+
+df['Time_Occurred'] = df['Time_Occurred'].astype(str).str.zfill(4)
+
+# Inserting a colon between the hours and minutes and convert to datetime format
+df['Time_Occurred'] = pd.to_datetime(df['Time_Occurred'].str[:2] + ':' + df['Time_Occurred'].str[2:], format='%H:%M').dt.strftime('%I:%M %p')
+
+In this section, I utilized the Date and Time columns to extract additional details about the incidents. I transformed the Time column into AM/PM format, and I converted the Date column into two separate columns. One column now shows the exact day of the week, while the other indicates the month, as shown below.
+print(df[['Date_Occurred', 'Time_Occurred', 'Day_of_Week','Month']])
+In the following sections, I will identify any outliers within the columns.
+#Checking for outliers in latitude or Longitude
+
+latitude_outliers_exist = ((df['Latitude'] > 90) | (df['Latitude'] < -90)).any()
+longitude_outliers_exist = ((df['Longitude'] > 180) | (df['Longitude'] < -180)).any()
+
+print("Latitude outliers:", latitude_outliers_exist)
+print("Longitude outliers:", longitude_outliers_exist)
+#Checking for outliers in date and time columns
+
+# Date_Occurred
+min_date = df['Date_Occurred'].min()
+max_date = df['Date_Occurred'].max()
+
+print("Minimum Date:", min_date)
+print("Maximum Date:", max_date)
+
+# Time_Occurred
+min_time = df['Time_Occurred'].min()
+max_time = df['Time_Occurred'].max()
+
+print("Minimum Time:", min_time)
+print("Maximum Time:", max_time)
+
+# Visualizing the distribution of dates
+plt.figure(figsize=(10, 6))
+plt.hist(df['Date_Occurred'], bins=30, color='skyblue', edgecolor='black')
+plt.title('Distribution of Date_Occurred')
+plt.xlabel('Date')
+plt.ylabel('Frequency')
+plt.ylim(25000, 35000)
+plt.show()
+
+# Visualizing the distribution of times
+time_intervals = [(0, 300), (300, 600), (600, 900), (900, 1200), (1200, 1500), (1500, 1800), (1800, 2100), (2100, 2400)]
+time_labels = ['12am-3am', '3am-6am', '6am-9am', '9am-12pm', '12pm-3pm', '3pm-6pm', '6pm-9pm', '9pm-12am']
+
+# Plotting the histogram 
+plt.figure(figsize=(10, 6))
+plt.hist(df['Time_Occurred'], bins=30, color='salmon', edgecolor='black')
+plt.title('Distribution of Time_Occurred')
+plt.xlabel('Time')
+plt.ylabel('Frequency')
+plt.xticks([interval[0] for interval in time_intervals], time_labels, rotation=45)
+plt.show()
+
+The plots above show distributions of the variables. After analyzing both graphs, it is fair to say that there are no outliers for both time and date
+#### Exploratory Data Analysis
+##### Graphs
+# Number of Crimes by Day of the Week
+crime_by_day = df['Day_of_Week'].value_counts().sort_index()
+days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+# Plot
+plt.figure(figsize=(10, 6))
+plt.bar(days_of_week, crime_by_day, color='lightcoral')
+plt.title('Number of Crimes by Day of the Week')
+plt.xlabel('Day of the Week')
+plt.ylabel('Number of Crimes')
+plt.xticks(rotation=45)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.ylim(120000, 145000)
+plt.show()
+# Number of Crimes by Time interval
+df['Time_Occurred'] = pd.to_datetime(df['Time_Occurred'], format='%I:%M %p')
+df['Hour'] = df['Time_Occurred'].dt.hour
+time_intervals = [(0, 3), (3, 6), (6, 9), (9, 12), (12, 15), (15, 18), (18, 21), (21, 24)]
+time_labels = ['12am-3am', '3am-6am', '6am-9am', '9am-12pm', '12pm-3pm', '3pm-6pm', '6pm-9pm', '9pm-12am']
+crime_counts = []
+for interval in time_intervals:
+    crimes_in_interval = df[(df['Hour'] >= interval[0]) & (df['Hour'] < interval[1])]   
+    crime_counts.append(len(crimes_in_interval))
+    
+plt.figure(figsize=(10, 6))
+plt.bar(time_labels, crime_counts, color='skyblue')
+plt.title('Number of Crimes by Time Interval')
+plt.xlabel('Time Interval')
+plt.ylabel('Number of Crimes')
+plt.xticks(rotation=45) 
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.show()
+#Top 10 Areas with the highest crime 
+top_areas = df['Area'].value_counts().head(10)
+
+plt.figure(figsize=(10, 6))
+top_areas.plot(kind='bar', color='lightgreen')
+plt.title('Top 10 Most Common Crime Areas')
+plt.xlabel('Area')
+plt.ylabel('Frequency')
+plt.xticks(rotation=45)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.ylim(40000, 65000)
+plt.show()
+##### Correlation Matrix
+numerical_df = df.select_dtypes(include='number')
+correlation_matrix = numerical_df.corr()
+
+print(correlation_matrix)
+##### Interactive Map
+import pandas as pd
+crime_map = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=12)
+marker_cluster = MarkerCluster().add_to(crime_map)
+for index, row in df.iterrows():
+    folium.Marker([row['Latitude'], row['Longitude']]).add_to(marker_cluster)
+crime_map
+##### Discussions
+In this section, a comprehensive Exploratory Data Analysis (EDA) was conducted to gain deeper insights into the dataset. Graphical representations were used to determine patterns and trends within the data. A correlation matrix was constructed to unveil potential relationships among the variables under examination. Finally, an interactive map visualization was developed to provide a spatial perspective on crime occurrences across different regions.
+
+The graphical analysis revealed that crime is most prevalent on Mondays, with Wednesdays also demonstrating elevated frequencies. On the other hand, crime occurrences are lower on Saturdays. Notably, crime rates peak during the evening hours, particularly between 6 PM and 9 PM, while remaining relatively prevalent from noon until early evening, from 12 PM to 6 PM. Crime incidents are at their lowest during the early morning hours, specifically between 3 AM and 6 AM.
+
+A closer examination of geographical data highlighted that areas designated as "Central" and "77th Street" record the highest frequencies of crime incidents, with approximately 63,000 and 55,000 occurrences, respectively.
+
+Despite conducting a correlation analysis using a matrix approach, no correlations emerged among the variables studied.
+
+Lastly, the interactive map visualization provides a dynamic platform to explore crime distributions across various geographical regions, offering a spatial perspective on crime patterns.
+#### Models
+##### Random Forest model for Area Prediction
+In this section I will design a model to predict areas with the highest crimes
+month_map = {
+    'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+    'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
+}
+df['Month'] = df['Month'].map(month_map)
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+
+X = df[['Month','Latitude','Longitude']]
+y = df['Area_Code']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+batch_size = 10000
+# Calculate the number of batches
+num_batches = int(np.ceil(len(X_test) / batch_size))
+predictions = []
+# Loop over each batch
+for i in range(num_batches):
+    start_idx = i * batch_size
+    end_idx = min((i + 1) * batch_size, len(X_test))
+    batch_X_test = X_test[start_idx:end_idx]
+    batch_pred = rf_model.predict(batch_X_test)
+    predictions.extend(batch_pred)
+y_pred = np.array(predictions)
+area_mapping = {
+    1: 'Central',
+    2: 'Rampart',
+    3: 'Southwest',
+    4: 'Rampart',
+    5: 'Harbor',
+    6: 'Hollywood',
+    7: 'Wilshire',
+    8: 'West LA',
+    9: 'Van Nuys',
+    10: 'West Valley',
+    11: 'Northeast',
+    12: '77th Street',
+    13: 'Newton',
+    14: 'Pacific',
+    15: 'N Hollywood',
+    16: 'Foothill',
+    17: 'Devonshire',
+    18: 'Southeast',
+    19: 'Mission',
+    20: 'Olympic',
+    21: 'Topanga'
+}
+predicted_area_names = [area_mapping[code] for code in y_pred]
+##### Random Forest model for predicting Logitude and Latitude
+In this section I will design a model to predict Longitude and Latitude of future crimes
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+
+X = df[['Latitude', 'Longitude']]
+y_lat = df['Latitude']
+y_lon = df['Longitude']
+
+#Split the data into training and testing sets for latitude prediction
+X_train_lat, X_test_lat, y_train_lat, y_test_lat = train_test_split(X, y_lat, test_size=0.2, random_state=42)
+
+#Split the data into training and testing sets for longitude prediction
+X_train_lon, X_test_lon, y_train_lon, y_test_lon = train_test_split(X, y_lon, test_size=0.2, random_state=42)
+
+#Train separate Random Forest models for latitude and longitude prediction
+rf_model_lat = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model_lat.fit(X_train_lat, y_train_lat)
+rf_model_lon = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model_lon.fit(X_train_lon, y_train_lon)
+y_pred_lat = rf_model_lat.predict(X_test_lat)
+y_pred_lon = rf_model_lon.predict(X_test_lon)
+#Storing the data in a new datafram
+predicted_df = pd.DataFrame({'Predicted_Latitude': y_pred_lat, 'Predicted_Longitude': y_pred_lon})
+print(predicted_df)
+##### Regression Metrics
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+print("Metrics for Latitude:")
+print("Mean Absolute Error (MAE):", mean_absolute_error(true_lat_labels, y_pred_lat))
+print("Mean Squared Error (MSE):", mean_squared_error(true_lat_labels, y_pred_lat))
+print("R-squared (R^2) score:", r2_score(true_lat_labels, y_pred_lat))
+
+print("\nMetrics for Longitude:")
+print("Mean Absolute Error (MAE):", mean_absolute_error(true_lon_labels, y_pred_lon))
+print("Mean Squared Error (MSE):", mean_squared_error(true_lon_labels, y_pred_lon))
+print("R-squared (R^2) score:", r2_score(true_lon_labels, y_pred_lon))
+#### Results and Analysis
+##### Model for Predicted Areas
+print(classification_report(y_test, y_pred))
+print(confusion_matrix(y_test, y_pred))
+The classification report provides a detailed evaluation of the model's performance for predicting area codes.
+
+Precision, recall, and F1-score are reported for each class, along with the support, which represents the number of instances of each class in the dataset.
+
+Precision measures the proportion of true positive predictions out of all positive predictions. Recall indicates the proportion of actual positives that were correctly identified by the model. F1-score is the harmonic mean of precision and recall, providing a balance between the two metrics.
+
+Support values vary across classes, reflecting differences in class frequencies.
+
+The overall accuracy of the model is approximately 99%, indicating excellent overall performance.
+
+The macro and weighted average metrics provide average scores across all classes, weighted either by the number of instances in each class (weighted average) or treating all classes equally (macro average).
+
+Overall, the classification report suggests that the model performs very well across all classes, with high precision, recall, and F1-scores, as well as high overall accuracy.
+##### Regression Metrics
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+print("Metrics for Latitude:")
+print("Mean Absolute Error (MAE):", mean_absolute_error(true_lat_labels, y_pred_lat))
+print("Mean Squared Error (MSE):", mean_squared_error(true_lat_labels, y_pred_lat))
+print("R-squared (R^2) score:", r2_score(true_lat_labels, y_pred_lat))
+
+print("\nMetrics for Longitude:")
+print("Mean Absolute Error (MAE):", mean_absolute_error(true_lon_labels, y_pred_lon))
+print("Mean Squared Error (MSE):", mean_squared_error(true_lon_labels, y_pred_lon))
+print("R-squared (R^2) score:", r2_score(true_lon_labels, y_pred_lon))
+Latitude:
+MAE: Approximately 9.92e-08, indicating extremely close agreement between predicted and actual latitude values.
+MSE: Approximately 1.59e-11, suggesting very small errors in latitude prediction.
+R-squared score: Around 0.999999999994262, indicating that the model explains almost all variability in latitude values.
+
+Longitude:
+MAE: Approximately 2.96e-07, showing very close agreement between predicted and actual longitude values.
+MSE: Approximately 1.07e-11, indicating minimal errors in longitude prediction.
+R-squared score: Around 0.99999999999968, suggesting that the model explains almost all variability in longitude values.
+
+Overall, these metrics demonstrate the excellent performance of the predictive models for both latitude and longitude, with very small errors and high levels of explained variability.
+##### Graph
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+area_counts = pd.Series(predicted_area_names).value_counts()
+
+plt.figure(figsize=(10, 6))
+sns.barplot(x=area_counts.index, y=area_counts.values, palette='viridis')
+plt.title('Predicted Area Names')
+plt.xlabel('Area Name')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+The graph above showcases the predicted areas with the highest crime rates. It reveals that Rampart is projected to experience a substantial increase in criminal activity. Following closely are Central and 77th Street, ranking second and third, respectively. The remainder of the graph mirrors the patterns observed in the original data visualization.
+##### Interactive map
+pred_crime_map = folium.Map(location=[predicted_df['Predicted_Latitude'].mean(), predicted_df['Predicted_Longitude'].mean()], zoom_start=12)
+
+marker_cluster = MarkerCluster().add_to(pred_crime_map)
+for index, row in predicted_df.iterrows():
+    folium.Marker([row['Predicted_Latitude'], row['Predicted_Longitude']]).add_to(marker_cluster)
+pred_crime_map
+The interactive map above shows the location for the predicted crimes. Each marker corresponds to a predicted crime location and is placed on the map at the predicted latitude and longitude coordinates from the DataFrame. Larger clusters with higher number of individual markers appear as orange while the others appear yellow. 
+#### Discussion and Conclusion
+**Learning and takeaways**
+
+This project aimed to use machine learning algorithms to predict where crimes are likely to happen based on various factors like time, weather, location, and past crime data. I got the dataset from the LAPD website, which had crime records going back to 2020. After cleaning the data and conducting an exploratory analysis, I built predictive models to predict locations of future crimes. Afterwards, I used multiple kinds of evaluation metrics to analyze the models. I believe the project was pretty successful. I was able to make predictions of the locations and map them.
+I personally enjoyed using new libraries for this project, especially the Folium library which allowed me to create the interactive map. I wasn't aware that this was possible. Similarly, I also learned more about predictive modeling, specifically Random forest and Regression metrics.
+
+**What didn't work/Improvements**
+
+One thing I struggled with was the performance aspect of the models. Due to limited computational resources available for training and evaluating complex machine learning models, it took too long to run the models. I experimented with various algorithms and tuning parameters to improve performance. However, finding the optimal configuration consumed too much valuable time and computational resources.
+
+There's definitely still some room for improvements. One notable aspect is the potential for incorporating additional variables into the models to enhance their predictive capabilities. By including factors like weather conditions, socio-economic indicators, or historical crime data, I can gain deeper insights into the underlying dynamics driving criminal activity. Another aspect that stands out is the need to predict the timing of crimes. While I was able to predict geographical locations of future crimes, I was unable to predict the exact times of the crimes. Exploring techniques from time-series analysis and incorporating features such as day of the week, month, or time of day could help address this limitation.
+
+Overall, this project was a great learning experience. I feel like I've leveled up my skills and I'm excited to see how I can apply them in future projects.
+
+
